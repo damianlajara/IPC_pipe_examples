@@ -17,14 +17,22 @@ void read_pipe(int file)
 	char buffer[1024];
 	FILE *stream;
 	stream = fdopen (file, "r");
+	printf("\nPARENT: in read_pipe before loop, Array contains: %s\n", buffer);/*DEBUG CODE*/
 	do
 	{
-		read_from_pipe = fread(buffer,100, 1, stream);//read_from_pipe contains the amount of characters read from pipe
+		read_from_pipe = fread(buffer,100, 1, stream);
 		fprintf(stdout,"%s",buffer);
-		fflush (stdout);
-		printf("\nPARENT: in read_pipe Array contains: %s\n", buffer);
+		//fflush (stdout);
+		printf("\nPARENT: in read_pipe during loop, Array contains: %s\n", buffer);/*DEBUG CODE*/
 
-	} while(!feof(stream) && !ferror(stream) && read_from_pipe > 0);//while no errors and end of file hasnt been reached
+	} while(!feof(stream) && !ferror(stream) && read_from_pipe > 0);
+
+	printf("\nPARENT: in read_pipe after loop, Array contains: %s\n", buffer);/*DEBUG CODE*/
+
+	/*
+	 * Here is Problem 1! For some reason, buffer[] is empty, when its supposed to be filled with what's in the stream
+	 */
+
 	fclose(stream);
 }
 
@@ -32,21 +40,20 @@ void read_pipe(int file)
 
 void write_pipe(int file, char *array)//mypipe[1]
 {
+	close(mypipe[0]);
 	puts("\nChild Process in write_pipe!");
 	//fwrite(mypipe[1],100, 1, fout);
 
 	FILE *stream;
 	stream = fdopen(file, "w");
-	for(int i = 0; i< /*sizeof(array)*/read_from_file; ++i) //maybe use strlen instead of sizeof
+	for(int i = 0; i < read_from_file; ++i)
 	{
-		written_to_pipe = fwrite(array, 100, 1, stream);//write to stream//instead of array it was file
-		fflush (stream);
+		written_to_pipe = fwrite(array, 100, 1, stream);//write to stream
+		//fflush (stream);
 		printf("CHILD: In write_pipe ARRAY contains: %s\n", array);/*DEBUG CODE*/
 	}
-	//fflush (stream);
-	printf("CHILD: Wrote: %ld characters\n", written_to_pipe);/*DEBUG CODE*/
+
 	fclose (stream);
-	close(mypipe[0]);
 }
 
 void read_file(const char *input)//char
@@ -64,16 +71,17 @@ void read_file(const char *input)//char
 		read_from_file = fread(temp,100, 1, fin);//read contains the amount of elements read from input files
 		//printf(" ARRAY contains: %s", temp);/*DEBUG CODE*/
 		strcat(buffer ,temp);
-		fflush (fin);
+		//fflush (fin);
 	} while(!feof(fin) && !ferror(fin) && read_from_file > 0);//while no errors and end of file hasnt been reached
 
 	/*
-	 * Here is the Problem! For some reason, after having read the file, there is some extra text taken from towards the end
+	 * Here is Problem 2! For some reason, after having read the file, there is some extra text taken from towards the end
 	 * of the file, and is being unwantingly read by this function!
 	 */
 
 	fclose(fin);//close input so content in buffer can be succesfully written
-	printf("\nCHILD: After loop Array contains: %s", buffer);/*DEBUG CODE*/
+	printf("CHILD: After loop Array contains: %s\n", buffer);/*DEBUG CODE*/
+	
 	write_pipe(mypipe[1], buffer);
 }
 
@@ -89,7 +97,7 @@ int main_program(const char *input)
 
 	if(pid == 0)
 	{
-		close(mypipe[1]);
+		//close(mypipe[1]);
 		puts("Child Process!");
 		printf("CHILD: my PID is %ld\n", (long) getpid());
 		printf("CHILD: I will now read the input file!.\n");
