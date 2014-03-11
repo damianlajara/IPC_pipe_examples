@@ -3,92 +3,77 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/wait.h>
+#include <string.h>//strlen
 
-//char length[1024];
-ssize_t read_from_file;// =1;
+ssize_t read_from_file;
 ssize_t read_from_pipe;
 ssize_t written_to_pipe;
-char buffer[1024];//Use this until fread undeterminate value is resolved! forloop in write_pipe
 int mypipe[2];
 
 /*Parent*/
 void read_pipe(int file)
 {
 	puts("\nParent Process in read_pipe!!");
-	ssize_t read_pipe;
-	//char buffer[1024];
-	int c;
+	char buffer[1024];
 	FILE *stream;
 	stream = fdopen (file, "r");
-	while(!feof(stream) && !ferror(stream))//while no errors and end of file hasnt been reached
+	do
 	{
-		/*reads from stream, length characters, 100 bytes at a time and stores it in the array buffer, 
-		and assaigns read the return value of fread*/
 		read_from_pipe = fread(buffer,100, 1, stream);//read_from_pipe contains the amount of characters read from pipe
 		fprintf(stdout,"%s",buffer);
-		//printf("\nREAD: %zd characters\n", read_from_pipe);
-		//printf("\nARRAY contains: %s\n", buffer);
-	}
+		fflush (stdout);
+		printf("\nPARENT: in read_pipe Array contains: %s\n", buffer);
+
+	} while(!feof(stream) && !ferror(stream) && read_from_pipe > 0);//while no errors and end of file hasnt been reached
 	fclose(stream);
 }
 
 /*Child*/
 
-void write_pipe(int file, char array[])//fds[1]
+void write_pipe(int file, char *array)//mypipe[1]
 {
 	puts("\nChild Process in write_pipe!");
 	//fwrite(mypipe[1],100, 1, fout);
 
 	FILE *stream;
 	stream = fdopen(file, "w");
-	for(int i = 0; i< sizeof(buffer)/*read_from_file*/; ++i) 
+	for(int i = 0; i< /*sizeof(array)*/read_from_file; ++i) //maybe use strlen instead of sizeof
 	{
 		written_to_pipe = fwrite(array, 100, 1, stream);//write to stream//instead of array it was file
+		fflush (stream);
+		printf("CHILD: In write_pipe ARRAY contains: %s\n", array);/*DEBUG CODE*/
 	}
-	//printf("\nCHILD WROTE: %zd characters\n", written_to_pipe);/*DEBUG CODE*/
-	//fprintf (stream, "\nhello, world!\n");/*DEBUG CODE*/
-	//fprintf (stream, "goodbye, world!\n");/*DEBUG CODE*/
+	//fflush (stream);
+	printf("CHILD: Wrote: %ld characters\n", written_to_pipe);/*DEBUG CODE*/
 	fclose (stream);
+	close(mypipe[0]);
 }
 
 void read_file(const char *input)//char
 {
-	bool error = false;
 	puts("\nChild Process in read_file!");
-	//char buffer[1024];
+	char buffer[1024];
+	char temp[1024];
 	FILE* fin;//declare a FILE pointer pointing to the input file
 	fin = fopen(input, "r");//opens file for reading purposes
-	//printf("Before loop\n");/*DEBUG CODE*/
-	//printf("\nARRAY contains: %s\n", buffer);/*DEBUG CODE*/
-	while(!feof(fin) && !ferror(fin)/* && read_from_file >= 0*/)//while no errors and end of file hasnt been reached /*CHANGE!!!!*/
+	strcpy(temp, "");//initialize temp array
+	printf("CHILD: Before loop Array contains: %s\n", temp);/*DEBUG CODE*/
+	do
 	{
-		//printf("During loop\n");/*DEBUG CODE*/
-		//reads from fin, length characters, 100 bytes at a time and stores it in the array mypipe, and assaigns read the return value of fread
-		read_from_file = fread(buffer,100, 1, fin);//read contains the amount of characters read from input files
-		/* 
-		 If a complete object cannot be read 
-		 (e.g. read_from_file only has 999 bytes but you've requested size == 1000),
-		 the file will be left in an interdeterminate state, which is why it will fail!
-		 basically, because there is not enough data to finish reading the 'first' (and only) 100 byte element.
-		 */
-		if(read_from_file <= 0) //If read_from_file is indeterminate, it means u read less than 
-		{
-			printf("Error reading from file! Please make sure file has more than 100 bytes!\n");
-			error = true;
-			break;
-		}
-		//printf("child read: %zd characters from file", read_from_file);
-		//printf("\nARRAY contains: %s\n", buffer);/*DEBUG CODE*/
-	}
-	if(error == true)
-		{
-			//if while loop was broken due to an error...
-			printf("Program will now terminate!\n");
-			exit(EXIT_FAILURE);
-		}
-	//printf("After loop\n");/*DEBUG CODE*/
-	//printf("\nARRAY contains: %s\n", buffer);/*DEBUG CODE*/
+		//printf("\nDuring loop in read_file");/*DEBUG CODE*/
+		read_from_file = fread(temp,100, 1, fin);//read contains the amount of elements read from input files
+		//printf(" ARRAY contains: %s", temp);/*DEBUG CODE*/
+		strcat(buffer ,temp);
+		fflush (fin);
+	} while(!feof(fin) && !ferror(fin) && read_from_file > 0);//while no errors and end of file hasnt been reached
+
+	/*
+	 * Here is the Problem! For some reason, after having read the file, there is some extra text taken from towards the end
+	 * of the file, and is being unwantingly read by this function!
+	 */
+
 	fclose(fin);//close input so content in buffer can be succesfully written
+	printf("\nCHILD: After loop Array contains: %s", buffer);/*DEBUG CODE*/
 	write_pipe(mypipe[1], buffer);
 }
 
@@ -96,36 +81,24 @@ void read_file(const char *input)//char
 
 int main_program(const char *input)
 {
-	//pid_t getpid (void): The getpid function returns the process ID of the current process.
-	//pid_t getppid (void): The getppid function returns the process ID of the parent of the current process.
 	int status;
 	pid_t pid;
 
-	// Create the pipe.
-	//puts the file descriptors for the reading and writing ends of the pipe (respectively) into filedes[0] and filedes[1]
-	//0 is for input, and 1 is for output
-
 	pipe(mypipe);
-
-	//Create the child process.
 	pid = fork(); //creates a child
 
 	if(pid == 0)
 	{
-		// This is the child process.
-		//Dont close the other end, because it uses it to write to the parent
+		close(mypipe[1]);
 		puts("Child Process!");
-		printf("Child PID is %ld\n", (long) getpid());
-		printf("CHILD: I will read the input file!.\n");
-		//close (mypipe[1]);
+		printf("CHILD: my PID is %ld\n", (long) getpid());
+		printf("CHILD: I will now read the input file!.\n");
 		read_file(input);
-		//write_pipe(mypipe[1]);
 		return EXIT_SUCCESS;
 	}
 
 	else if(pid < 0)//if fork fails it returns -1, but just in case I accounted for everything
 	{
-		// The fork failed.
 		puts("Fork failed!!");
 		fprintf(stderr, "Fork failed.\n");
 		return EXIT_FAILURE;
@@ -133,23 +106,22 @@ int main_program(const char *input)
 
 	else
 	{
-		// This is the parent process.
 		/*
 		if wifexited() is true, it means child exited succesfully, 
 		and will only then show its exit status with wexitstatus()
 		*/
-		
+
 			puts("Parent Process!");
 			close(mypipe[1]);//close unused side
-			printf("Parent PID is %ld\n", (long) getpid());
-			printf("I will now wait for my child to exit.\n");
+			printf("PARENT: my PID is %ld\n", (long) getpid());
+			printf("PARENT: I will now wait for my child to exit.\n");
 			wait(&status); // wait for child to exit, and store its status
-			if(WIFEXITED(status))
+			if(WIFEXITED(status))//if child exited normally
 			{
-	       	 	printf("Child's exit code is: %d\n", WEXITSTATUS(status));
-	       		printf("Now going to read from pipe!!\n");
+	       	 	printf("PARENT: Child's exit code is: %d\n", WEXITSTATUS(status));
+	       		printf("PARENT: Now going to read from pipe!!\n");
 				read_pipe(mypipe[0]);
-				printf("Goodbye!\n");
+				printf("PARENT: Goodbye!\n");
 				return EXIT_SUCCESS;
 			}
 			else
@@ -158,9 +130,6 @@ int main_program(const char *input)
 				return EXIT_FAILURE;
 			}
 	}
-
-	//read_pipe();
-	//write_pipe();
 	return EXIT_SUCCESS;
 
 }
