@@ -8,101 +8,108 @@
 ssize_t read_from_file;
 ssize_t read_from_pipe;
 ssize_t written_to_pipe;
-int mypipe[2];
+char read_buffer[1024];
+int child1[2];
+//int child2[2];
 
 /*Parent*/
-void read_pipe(int file)
+void read_pipe(/*int file*/int *pipe_read)
 {
-	puts("\nParent Process in read_pipe!!");
-	char buffer[1024];
+	int file = pipe_read[0];
+	//puts("\nParent Process in read_pipe!!");
+	//char buffer[1024];
 	FILE *stream;
+	char *buf;
 	stream = fdopen (file, "r");
-	printf("\nPARENT: in read_pipe before loop, Array contains: %s\n", buffer);/*DEBUG CODE*/
+	//printf("\nPARENT: in read_pipe before loop, Array contains: %s\n", read_buffer);/*DEBUG CODE*/
 	do
 	{
-		read_from_pipe = fread(buffer,100, 1, stream);
-		fprintf(stdout,"%s",buffer);
+		//puts("\nParent Process in read_pipe!!");
+		read_from_pipe = fread(read_buffer,1, 100, stream);
+		buf = (char *)malloc(read_from_pipe*sizeof(char));
+        strncpy(buf,read_buffer,read_from_pipe);
+		fprintf(stdout,"%s",buf);
+        free(buf);
 		//fflush (stdout);
-		printf("\nPARENT: in read_pipe during loop, Array contains: %s\n", buffer);/*DEBUG CODE*/
+		//printf("\nPARENT: in read_pipe during loop, Array contains: %s\n", read_buffer);/*DEBUG CODE*/
 
 	} while(!feof(stream) && !ferror(stream) && read_from_pipe > 0);
 
-	printf("\nPARENT: in read_pipe after loop, Array contains: %s\n", buffer);/*DEBUG CODE*/
-
-	/*
-	 * Here is Problem 1! For some reason, buffer[] is empty, when its supposed to be filled with what's in the stream
-	 */
-
+	//printf("\nPARENT: in read_pipe after loop, Array contains: %s\n", read_buffer);/*DEBUG CODE*/
 	fclose(stream);
 }
 
 /*Child*/
 
-void write_pipe(int file, char *array)//mypipe[1]
+void write_pipe(FILE *stream, char *temp,int bytes_read)//child1[1]
 {
-	close(mypipe[0]);
-	puts("\nChild Process in write_pipe!");
-	//fwrite(mypipe[1],100, 1, fout);
+	//char buffer[1024];//added
+	//puts("\nChild Process in write_pipe!");
+	//fwrite(child1[1],100, 1, fout);
 
-	FILE *stream;
-	stream = fdopen(file, "w");
-	for(int i = 0; i < read_from_file; ++i)
-	{
-		written_to_pipe = fwrite(array, 100, 1, stream);//write to stream
+	//FILE *stream;
+	//stream = fdopen(file, "w");
+	//for(int i = 0; i < read_from_file; ++i)
+	//{//buffer instead of stream
+	    int wrote = fwrite(temp,1, bytes_read, stream);//write to stream
+	    fprintf(stdout,"\nChild in write pipe wrote %d bytes\n",wrote);
+	    //strncpy(buffer,array,read_from_file);
 		//fflush (stream);
-		printf("CHILD: In write_pipe ARRAY contains: %s\n", array);/*DEBUG CODE*/
-	}
+	//	printf("CHILD: In write_pipe ARRAY contains: %s\n", temp);/*DEBUG CODE*/
+	//}
 
-	fclose (stream);
+	
 }
 
-void read_file(const char *input)//char
+void read_write_from_file(const char *input, int *pipe_write)//char
 {
 	puts("\nChild Process in read_file!");
-	char buffer[1024];
-	char temp[1024];
+	char temp[100];
 	FILE* fin;//declare a FILE pointer pointing to the input file
 	fin = fopen(input, "r");//opens file for reading purposes
-	strcpy(temp, "");//initialize temp array
 	printf("CHILD: Before loop Array contains: %s\n", temp);/*DEBUG CODE*/
+	FILE *stream;
+	stream = fdopen(pipe_write[1], "w");
 	do
 	{
 		//printf("\nDuring loop in read_file");/*DEBUG CODE*/
-		read_from_file = fread(temp,100, 1, fin);//read contains the amount of elements read from input files
+		read_from_file = fread(temp,1, 100, fin);//read contains the amount of elements read from input files
 		//printf(" ARRAY contains: %s", temp);/*DEBUG CODE*/
-		strcat(buffer ,temp);
+		//strcat(buffer ,temp);
+		//strncpy(buffer,temp,read_from_file);
+		write_pipe(stream, temp,read_from_file);//write_pipe(child1[1], temp) /*********send the strream instead of child1 --shweta*******/
+
 		//fflush (fin);
 	} while(!feof(fin) && !ferror(fin) && read_from_file > 0);//while no errors and end of file hasnt been reached
-
-	/*
-	 * Here is Problem 2! For some reason, after having read the file, there is some extra text taken from towards the end
-	 * of the file, and is being unwantingly read by this function!
-	 */
-
+	//write_pipe(stream, buffer);
 	fclose(fin);//close input so content in buffer can be succesfully written
-	printf("CHILD: After loop Array contains: %s\n", buffer);/*DEBUG CODE*/
-	
-	write_pipe(mypipe[1], buffer);
+	fclose (stream);
+	close(pipe_write[1]);
+	//printf("CHILD: After loop Array contains: %s\n", temp);/*DEBUG CODE*/
+
 }
 
 
 
-int main_program(const char *input)
+int main_program(const char *input, const char *input2)
 {
 	int status;
 	pid_t pid;
+	//pid_t pid2;
 
-	pipe(mypipe);
+	pipe(child1);
+	//pipe(child2);
+
 	pid = fork(); //creates a child
 
-	if(pid == 0)
+	if(pid == 0)//child
 	{
-		//close(mypipe[1]);
-		puts("Child Process!");
-		printf("CHILD: my PID is %ld\n", (long) getpid());
-		printf("CHILD: I will now read the input file!.\n");
-		read_file(input);
-		return EXIT_SUCCESS;
+		//close(child1[1]);
+		puts("Child1 Process!");
+		printf("CHILD1: my PID is %ld\n", (long) getpid());
+		printf("CHILD1: I will now read the input file!.\n");
+		read_write_from_file(input, child1);
+		//return EXIT_SUCCESS;
 	}
 
 	else if(pid < 0)//if fork fails it returns -1, but just in case I accounted for everything
@@ -112,31 +119,38 @@ int main_program(const char *input)
 		return EXIT_FAILURE;
 	}
 
-	else
+	else//parent
 	{
-		/*
-		if wifexited() is true, it means child exited succesfully, 
-		and will only then show its exit status with wexitstatus()
-		*/
+		puts("Parent1 Process!");
+		close(child1[1]);//close unused side
+		read_pipe(child1);//child 1
 
-			puts("Parent Process!");
-			close(mypipe[1]);//close unused side
-			printf("PARENT: my PID is %ld\n", (long) getpid());
-			printf("PARENT: I will now wait for my child to exit.\n");
-			wait(&status); // wait for child to exit, and store its status
-			if(WIFEXITED(status))//if child exited normally
-			{
-	       	 	printf("PARENT: Child's exit code is: %d\n", WEXITSTATUS(status));
-	       		printf("PARENT: Now going to read from pipe!!\n");
-				read_pipe(mypipe[0]);
-				printf("PARENT: Goodbye!\n");
-				return EXIT_SUCCESS;
-			}
-			else
-			{
-				printf("\nParent will now exit, due to bad child exit code!\n");
-				return EXIT_FAILURE;
-			}
+		/*
+		pid2 = fork();//create another child
+		if(pid == 0)
+		{
+			//close(child1[1]);
+			puts("Child2 Process!");
+			printf("CHILD2: my PID is %ld\n", (long) getpid());
+			printf("CHILD2: I will now read the input file!.\n");
+			read_write_from_file(input2,child2);
+			//return EXIT_SUCCESS;
+		}
+
+		else if(pid < 0)//if fork fails it returns -1, but just in case I accounted for everything
+		{
+			puts("Fork failed!!");
+			fprintf(stderr, "Fork failed.\n");
+			return EXIT_FAILURE;
+		}
+
+		else
+		{
+			puts("Parent2 Process!");
+			close(child2[1]);//close unused side
+			read_pipe(child2);//child 1
+		}
+		*/
 	}
 	return EXIT_SUCCESS;
 
@@ -144,7 +158,6 @@ int main_program(const char *input)
 
 int main(int argc, char **argv)
 {
-	main_program(argv[1]);
-
+	main_program(argv[1],argv[2]);
 	return 0;
 }
